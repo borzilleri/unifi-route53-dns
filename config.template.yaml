@@ -1,0 +1,8 @@
+app:
+  port: 8080
+records:
+  your-hostname.net:
+    zoneId: "example-zone-id"
+    ttl: 300
+    additionalHosts:
+      - "additional-host.your-hostname.net"

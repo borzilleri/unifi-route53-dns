@@ -1,0 +1,22 @@
+
+services:
+  unifi-route53-updater:
+    image: "unifi-route53-dns:latest"
+    ports:
+      - 8080:8080
+    environment:
+      UNIFI_R53_DNS_APP_PORT: 8080
+      AWS_REGION: us-west-2
+      # Do not change this
+      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/aws_credentials
+    volumes:
+      # Change the left side to change where your local config is stored.
+      # Do not change the right half.
+      - ./config.yaml:/config.yaml
+    secrets:
+      - aws_credentials
+
+secrets:
+  aws_credentials:
+    # CHANGE THIS to where your aws credentials file is stored
+    file: /path/to/aws/credentials_file
