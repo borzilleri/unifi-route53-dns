@@ -10,7 +10,8 @@ services:
       # Do not change this
       AWS_SHARED_CREDENTIALS_FILE: /run/secrets/aws_credentials
     volumes:
-      # Change the left side to change where your local config is stored.
+      # Change the left side to change where your local config is stored,
+      # if it's not alongside this file.
       # Do not change the right half.
       - ./config.yaml:/config.yaml
     secrets:

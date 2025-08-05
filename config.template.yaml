@@ -1,8 +1,11 @@
-app:
-  port: 8080
 records:
+  # The hostname record to update in Route53
   your-hostname.net:
+    # ZoneID for the hosted zone
     zoneId: "example-zone-id"
+    # TTL of the record, in seconds.
     ttl: 300
+    # Any additional hosts, within the same hosted zone,
+    # that should also be updated as well.
     additionalHosts:
       - "additional-host.your-hostname.net"
