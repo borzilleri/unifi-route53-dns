@@ -28,7 +28,7 @@ import (
 const CONFIG_FILE_PATH string = "config.yaml"
 const ENV_PREFIX string = "UNIFI_R53_DNS_"
 const ENV_LOG_LEVEL string = ENV_PREFIX + "LOG_LEVEL"
-const DEFAULT_LOG_LEVEL zerolog.Level = zerolog.InfoLevel
+const DEFAULT_LOG_LEVEL zerolog.Level = zerolog.DebugLevel
 const ENV_DEV_MODE = "DEV_MODE"
 
 type Hostname string
@@ -190,6 +190,15 @@ func InitRoute53Client(config aws.Config) route53.Client {
 	return *r53Client
 }
 
+func GetLogLevel() zerolog.Level {
+	log_level := DEFAULT_LOG_LEVEL
+	env_level, value_present := os.LookupEnv(ENV_LOG_LEVEL)
+	if value_present {
+		log_level, _ = zerolog.ParseLevel(env_level)
+	}
+	return log_level
+}
+
 func main() {
 	// Check to switch to dev mode logging
 	if DevMode {
@@ -197,13 +206,7 @@ func main() {
 	}
 
 	// Configure Log Level
-	logLevel, err := zerolog.ParseLevel(os.Getenv(ENV_LOG_LEVEL))
-	if err != nil {
-		logLevel = DEFAULT_LOG_LEVEL
-	}
-	zerolog.SetGlobalLevel(logLevel)
-
-	log.Info().Msg("Application Started")
+	zerolog.SetGlobalLevel(GetLogLevel())
 
 	appConfig := LoadAppConfig()
 	awsConfig := LoadAwsConfig()
