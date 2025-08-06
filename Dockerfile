@@ -26,6 +26,7 @@ FROM scratch
 
 ENV UNIFI_R53_DNS_APP_PORT=8080
 
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /app/app /app
 
