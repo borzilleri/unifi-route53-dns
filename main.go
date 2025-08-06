@@ -118,9 +118,16 @@ func UpdateRoute53Record(client route53.Client, hostConfig HostConfig, hostname 
 	log.Debug().Interface("ChangeResourcesRecordSetInput", input).Send()
 	if commit {
 		output, err := client.ChangeResourceRecordSets(context.TODO(), &input)
-		log.Debug().Interface("ChangeResourcesRecordSetOutput", output).Send()
 		if err != nil {
-			log.Error().Err(err).Interface("ChangeResourcesRecordSetInput", input).Msg("Error Updating Route53 RecordSets")
+			log.Error().Err(err).
+				Interface("ChangeResourcesRecordSetOutput", output).
+				Interface("ChangeResourcesRecordSetInput", input).
+				Msg("Error Updating Route53 RecordSets")
+		} else {
+			log.Info().
+				Str("hostname", string(hostname)).
+				Interface("ChangeResourcesRecordSetOutput", output).
+				Msg("RecordSet updated successfully.")
 		}
 	}
 }
