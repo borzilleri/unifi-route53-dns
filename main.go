@@ -25,10 +25,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const DEFAULT_PORT int = 8080
+const DEFAULT_LOG_LEVEL zerolog.Level = zerolog.DebugLevel
+
 const CONFIG_FILE_PATH string = "config.yaml"
 const ENV_PREFIX string = "UNIFI_R53_DNS_"
 const ENV_LOG_LEVEL string = ENV_PREFIX + "LOG_LEVEL"
-const DEFAULT_LOG_LEVEL zerolog.Level = zerolog.DebugLevel
 const ENV_DEV_MODE = "DEV_MODE"
 
 type Hostname string
@@ -76,7 +78,7 @@ func MakeChangeRequest(zoneId ZoneID, hostname Hostname, ip net.IP, ttl TTL) rou
 	resourceZoneId := string(zoneId)
 	resourceIp := ip.String()
 	comment := "Unifi Updated IP Address"
-	lastUpdatedMsg := fmt.Sprintf("Last Updated: %s", time.Now().String())
+	lastUpdatedMsg := fmt.Sprintf("\"Last Updated: %s\"", time.Now().String())
 	return route53.ChangeResourceRecordSetsInput{
 		ChangeBatch: &types.ChangeBatch{
 			Changes: []types.Change{
@@ -113,9 +115,10 @@ func UpdateRoute53Record(client route53.Client, hostConfig HostConfig, hostname 
 	zoneId := ZoneID(hostConfig.ZoneId)
 	ttl := TTL(hostConfig.Ttl)
 	input := MakeChangeRequest(zoneId, hostname, ip, ttl)
-	log.Info().Interface("ChangeResourcesRecordSetInput", input).Send()
+	log.Debug().Interface("ChangeResourcesRecordSetInput", input).Send()
 	if commit {
-		_, err := client.ChangeResourceRecordSets(context.TODO(), &input)
+		output, err := client.ChangeResourceRecordSets(context.TODO(), &input)
+		log.Debug().Interface("ChangeResourcesRecordSetOutput", output).Send()
 		if err != nil {
 			log.Error().Err(err).Interface("ChangeResourcesRecordSetInput", input).Msg("Error Updating Route53 RecordSets")
 		}
@@ -171,7 +174,13 @@ func LoadAppConfig() AppConfig {
 	// Unmarshall the config into our struct
 	var appConfig AppConfig
 	k.Unmarshal("", &appConfig)
-	log.Info().Interface("config", appConfig).Msg("Loaded App Config")
+
+	if appConfig.App.Port <= 0 {
+		log.Warn().Msg("app.port configured for non-positive value, using default value.")
+		appConfig.App.Port = DEFAULT_PORT
+	}
+
+	log.Debug().Interface("config", appConfig).Msg("Loaded App Config")
 	return appConfig
 }
 
@@ -180,13 +189,13 @@ func LoadAwsConfig() aws.Config {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize AWS Config")
 	}
-	log.Info().Msg("AWS Config Loaded")
+	log.Debug().Msg("AWS Config Loaded")
 	return config
 }
 
 func InitRoute53Client(config aws.Config) route53.Client {
 	r53Client := route53.NewFromConfig(config)
-	log.Info().Msg("route53 Client Initialized")
+	log.Debug().Msg("route53 Client Initialized")
 	return *r53Client
 }
 
@@ -214,7 +223,10 @@ func main() {
 
 	nicUpdateHandler := func(w http.ResponseWriter, req *http.Request) {
 		req.ParseForm()
-		commitChanges, _ := strconv.ParseBool(req.FormValue("commit"))
+		commitChanges := true
+		if _, present := req.Form["commit"]; present {
+			commitChanges, _ = strconv.ParseBool(req.FormValue("commit"))
+		}
 		updateRequest := UpdateRequest{
 			Host:   req.FormValue("hostname"),
 			IP:     req.FormValue("ip"),
