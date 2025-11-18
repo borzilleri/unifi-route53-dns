@@ -9,3 +9,7 @@ records:
     # that should also be updated as well.
     additionalHosts:
       - "additional-host.your-hostname.net"
+
+pushover:
+  api-token: "pushover-app-api-token"
+  user-key: "your-pushover-user-key"

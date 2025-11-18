@@ -21,6 +21,8 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 
+	"github.com/gregdel/pushover"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -47,11 +49,17 @@ type HostConfig struct {
 	AdditionalHosts []string `koanf:"additionalHosts"`
 }
 
+type PushoverConfig struct {
+	ApiToken     string `koanf:"api-token"`
+	RecipientKey string `koanf:"user-key"`
+}
+
 type AppConfig struct {
 	App struct {
 		Port int `koanf:"port"`
 	} `koanf:"app"`
-	Records map[string]HostConfig `koanf:"records"`
+	Records  map[string]HostConfig `koanf:"records"`
+	Pushover PushoverConfig        `koanf:"pushover"`
 }
 
 type UpdateRequest struct {
@@ -70,6 +78,26 @@ func (r *UpdateRequest) validateIp() (net.IP, error) {
 		return nil, fmt.Errorf("'%s' is not a valid IpV4 address", r.IP)
 	}
 	return ip, nil
+}
+
+func NotifyPushover(config PushoverConfig, err error) {
+	app := pushover.New(config.ApiToken)
+	recipient := pushover.NewRecipient(config.RecipientKey)
+	msgStr := "WAN IP Changed Successfully"
+	if err != nil {
+		msgStr = "Error Changing WAN IP"
+	}
+	message := pushover.NewMessage(msgStr)
+
+	// Send the message to the recipient
+	response, err := app.SendMessage(message, recipient)
+	if err != nil {
+		log.Error().Err(err).
+			Msg("Error publishing Pushover Notification")
+	}
+	log.Info().
+		Interface("PushoverResponse", response).
+		Msg("Pushover Response")
 }
 
 func MakeChangeRequest(zoneId ZoneID, hostname Hostname, ip net.IP, ttl TTL) route53.ChangeResourceRecordSetsInput {
@@ -111,7 +139,7 @@ func MakeChangeRequest(zoneId ZoneID, hostname Hostname, ip net.IP, ttl TTL) rou
 	}
 }
 
-func UpdateRoute53Record(client route53.Client, hostConfig HostConfig, hostname Hostname, ip net.IP, commit bool) {
+func UpdateRoute53Record(client route53.Client, hostConfig HostConfig, hostname Hostname, ip net.IP, commit bool) error {
 	zoneId := ZoneID(hostConfig.ZoneId)
 	ttl := TTL(hostConfig.Ttl)
 	input := MakeChangeRequest(zoneId, hostname, ip, ttl)
@@ -123,6 +151,7 @@ func UpdateRoute53Record(client route53.Client, hostConfig HostConfig, hostname 
 				Interface("ChangeResourcesRecordSetOutput", output).
 				Interface("ChangeResourcesRecordSetInput", input).
 				Msg("Error Updating Route53 RecordSets")
+			return err
 		} else {
 			log.Info().
 				Str("hostname", string(hostname)).
@@ -130,6 +159,7 @@ func UpdateRoute53Record(client route53.Client, hostConfig HostConfig, hostname 
 				Msg("RecordSet updated successfully.")
 		}
 	}
+	return nil
 }
 
 func ProcessIpChange(client route53.Client, appConfig AppConfig, request UpdateRequest) {
@@ -140,11 +170,14 @@ func ProcessIpChange(client route53.Client, appConfig AppConfig, request UpdateR
 	}
 
 	if hostConfig, exists := appConfig.Records[request.Host]; exists {
-		UpdateRoute53Record(client, hostConfig, request.getHostname(), ip, request.Commit)
-		// Process AWS request for this host, and additional hosts.
-		for _, additionalHost := range hostConfig.AdditionalHosts {
-			hostname := Hostname(additionalHost)
-			UpdateRoute53Record(client, hostConfig, hostname, ip, request.Commit)
+		err := UpdateRoute53Record(client, hostConfig, request.getHostname(), ip, request.Commit)
+		NotifyPushover(appConfig.Pushover, err)
+		if err != nil {
+			// Process AWS request for this host, and additional hosts.
+			for _, additionalHost := range hostConfig.AdditionalHosts {
+				hostname := Hostname(additionalHost)
+				UpdateRoute53Record(client, hostConfig, hostname, ip, request.Commit)
+			}
 		}
 	} else {
 		log.Error().Interface("request", request).Msg("Hostname not found in config, ignoring")
