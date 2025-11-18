@@ -80,14 +80,21 @@ func (r *UpdateRequest) validateIp() (net.IP, error) {
 	return ip, nil
 }
 
-func NotifyPushover(config PushoverConfig, err error) {
+func NotifyPushover(config PushoverConfig, host string, err error) {
+	if config.ApiToken == "" || config.RecipientKey == "" {
+		log.Info().Msg("Pushover notification not configured.")
+		return
+	}
 	app := pushover.New(config.ApiToken)
 	recipient := pushover.NewRecipient(config.RecipientKey)
-	msgStr := "WAN IP Changed Successfully"
+	msgStr := "IP Updated for: " + host
 	if err != nil {
-		msgStr = "Error Changing WAN IP"
+		msgStr = "Error: IP Update Failed for: " + host
 	}
-	message := pushover.NewMessage(msgStr)
+	message := &pushover.Message{
+		Message:  msgStr,
+		Priority: pushover.PriorityNormal,
+	}
 
 	// Send the message to the recipient
 	response, err := app.SendMessage(message, recipient)
@@ -171,12 +178,15 @@ func ProcessIpChange(client route53.Client, appConfig AppConfig, request UpdateR
 
 	if hostConfig, exists := appConfig.Records[request.Host]; exists {
 		err := UpdateRoute53Record(client, hostConfig, request.getHostname(), ip, request.Commit)
-		NotifyPushover(appConfig.Pushover, err)
+		NotifyPushover(appConfig.Pushover, request.Host, err)
 		if err != nil {
 			// Process AWS request for this host, and additional hosts.
 			for _, additionalHost := range hostConfig.AdditionalHosts {
 				hostname := Hostname(additionalHost)
-				UpdateRoute53Record(client, hostConfig, hostname, ip, request.Commit)
+				err := UpdateRoute53Record(client, hostConfig, hostname, ip, request.Commit)
+				if err != nil {
+					NotifyPushover(appConfig.Pushover, string(hostname), err)
+				}
 			}
 		}
 	} else {
