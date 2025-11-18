@@ -169,29 +169,34 @@ func UpdateRoute53Record(client route53.Client, hostConfig HostConfig, hostname 
 	return nil
 }
 
-func ProcessIpChange(client route53.Client, appConfig AppConfig, request UpdateRequest) {
+func ProcessIpChange(client route53.Client, appConfig AppConfig, request UpdateRequest) string {
 	ip, err := request.validateIp()
 	if err != nil {
 		log.Error().Interface("request", request).Err(err).Msg("Invalid IP specified")
-		return
+		return "notfqdn" // This is kinda the wrong error, but i dont know a better one.
 	}
 
+	// TODO: support the "nochg" response
 	if hostConfig, exists := appConfig.Records[request.Host]; exists {
 		err := UpdateRoute53Record(client, hostConfig, request.getHostname(), ip, request.Commit)
-		NotifyPushover(appConfig.Pushover, request.Host, err)
+		if request.Commit {
+			NotifyPushover(appConfig.Pushover, request.Host, err)
+		}
 		if err != nil {
 			// Process AWS request for this host, and additional hosts.
 			for _, additionalHost := range hostConfig.AdditionalHosts {
 				hostname := Hostname(additionalHost)
 				err := UpdateRoute53Record(client, hostConfig, hostname, ip, request.Commit)
-				if err != nil {
+				if err != nil && request.Commit {
 					NotifyPushover(appConfig.Pushover, string(hostname), err)
 				}
 			}
 		}
 	} else {
 		log.Error().Interface("request", request).Msg("Hostname not found in config, ignoring")
+		return "nohost"
 	}
+	return fmt.Sprintf("good %s", request.IP)
 }
 
 func HealthCheck(w http.ResponseWriter, _ *http.Request) {
@@ -283,7 +288,8 @@ func main() {
 			Commit: commitChanges,
 		}
 		log.Info().Interface("request", &updateRequest).Msg("Received Update Request")
-		ProcessIpChange(r53Client, appConfig, updateRequest)
+		resp := ProcessIpChange(r53Client, appConfig, updateRequest)
+		fmt.Fprint(w, resp)
 	}
 
 	http.HandleFunc("/nic/update", nicUpdateHandler)
